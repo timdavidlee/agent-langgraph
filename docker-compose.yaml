@@ -1,0 +1,15 @@
+version: "3.9"
+
+services:
+  vrs:
+    build:
+      context: ./samples/service
+      dockerfile: Dockerfile
+    container_name: vacay-ressy-service
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app  # Optional: Mount local code for live reload (dev only)
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
