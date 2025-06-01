@@ -44,7 +44,15 @@ def generate_vacation_openings(n: int = 100):
     durations = generate_durations(n)
 
     collector = []
-    for c, h, lc, s, d in zip(countries, hotels, lodge_classes, start_dates, durations):
+    zip_package = zip(
+        countries,
+        hotels,
+        lodge_classes,
+        start_dates,
+        durations
+    )
+
+    for c, h, lc, s, d in zip_package:
         l, r = lc
         collector.append(
             VacationOpening(

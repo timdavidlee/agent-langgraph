@@ -8,3 +8,4 @@ pandas
 numpy
 loguru
 uvicorn[standard]
+jupyterlab

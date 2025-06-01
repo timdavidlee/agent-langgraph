@@ -1,20 +1,30 @@
+from collections import defaultdict
+from datetime import date
+
+from fastapi import FastAPI
 import numpy as np
+
 import uvicorn
+from samples.service.schemas import (
+    ResponseStatus,
+    BookingRequest,
+    SearchResultsResponse,
+    GetUserReservationsResponse,
+    BookingResponse,
+)
+from samples.service.meta import Country
 from samples.service.generator import (
     generate_vacation_openings,
     VacationOpening,
     Reservation,
 )
-from samples.service.schema import BookingRequest
-from datetime import date
-from fastapi import FastAPI
 
 
 NP_RANDOM = np.random.RandomState(1337)
 
 app = FastAPI()
 OPENINGS_DB = dict()
-RESERVATIONS_DB = dict()
+RESERVATIONS_DB = defaultdict(dict)
 
 # kick off
 OPENINGS_DB.update({row.vid: row for row in generate_vacation_openings(n=100)})
@@ -43,18 +53,26 @@ def generate_openings(n: int = 10):
     }
 
 
-@app.get("/openings/search")
+@app.get("/openings/search", response_model=SearchResultsResponse)
 def search_openings(
     country: str | None = None,
     start_date: date | None = None,
     end_date: date | None = None,
     rate: float | None = None,
     limit: int | None = None,
-) -> dict:
+):
     rows: list[VacationOpening] = [r for r in OPENINGS_DB.values()]
 
     search_params = dict()
     if country is not None:
+        if country not in Country._value2member_map_:
+            return {
+                "results_count": 0,
+                "search_params": {"country": country},
+                "results": [],
+                "status": ResponseStatus.NOT_AVAILABLE
+            }
+
         search_params["country"] = country
         rows = [r for r in rows if r.country == country]
 
@@ -81,15 +99,28 @@ def search_openings(
     }
 
 
-@app.get("/reservations")
-def get_reservations_list(user: str) -> list[Reservation]:
-    return RESERVATIONS_DB.get(user)
+@app.get("/reservations", response_model=GetUserReservationsResponse)
+def get_reservations_list(user: str):
+    reservations_index = RESERVATIONS_DB.get(user)
+    if reservations_index is not None:
+        return {
+            "status": ResponseStatus.NOT_FOUND,
+            "reservations": dict()
+        }
+
+    return {
+        "status": ResponseStatus.FOUND,
+        "reservations": reservations_index
+    }
 
 
 def _pop_opening_and_book_reservation(request: BookingRequest):
     opening = OPENINGS_DB.pop(request.vid)
     if not opening:
-        return {"msg": "could not find reservation: {}".format(request.vid)}
+        return {
+            "msg": "could not find reservation: {}".format(request.vid),
+            "status": ResponseStatus.NOT_FOUND,
+        }
 
     new_booking = {
         "vacation_opening": opening.model_dump(),
@@ -103,20 +134,27 @@ def _pop_opening_and_book_reservation(request: BookingRequest):
 
     ressy = Reservation.model_validate(new_booking)
     RESERVATIONS_DB[ressy.rid] = ressy
-    return {"msg": "booking made", "data": ressy}
+    return {
+        "msg": "booking made",
+        "status": ResponseStatus.CONFIRMED,
+        "details": ressy
+    }
 
 
-@app.post("/reservations/book")
+@app.post("/reservations/book", response_model=BookingResponse)
 def book_reservation(request: BookingRequest):
     # should remove the reservation
     return _pop_opening_and_book_reservation(request)
 
 
-@app.post("/reservations/competitive_book")
+@app.post("/reservations/competitive_book", response_model=BookingResponse)
 def book_reservation_against_others(request: BookingRequest):
     # to mimick incase reservation doesn't exist again
     if NP_RANDOM.rand() > 0.3:
-        return {"msg": "opening is no longer available"}
+        return {
+            "msg": "opening is no longer available",
+            "status": ResponseStatus.NOT_AVAILABLE
+        }
 
     return _pop_opening_and_book_reservation(request)
 
